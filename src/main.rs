@@ -108,26 +108,6 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
     }
 }
 
-fn register_torrent_association() -> Result<(), String> {
-    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    let command = format!("\"{}\" \"%1\"", executable.display());
-    let entries = [
-        ("HKCU\\Software\\Classes\\.torrent", "TorrentClient.Torrent"),
-        ("HKCU\\Software\\Classes\\TorrentClient.Torrent", t("Торрент-зверёк", "Torrent Critter")),
-        ("HKCU\\Software\\Classes\\TorrentClient.Torrent\\shell\\open\\command", command.as_str()),
-    ];
-    for (key, value) in entries {
-        let args = ["add", key, "/ve", "/d", value, "/t", "REG_SZ", "/f"];
-        let result = std::process::Command::new("reg.exe").args(args).output().map_err(|e| e.to_string())?;
-        if !result.status.success() { return Err(String::from_utf8_lossy(&result.stderr).trim().to_string()); }
-    }
-    let open_with = std::process::Command::new("reg.exe").args([
-        "add", "HKCU\\Software\\Classes\\.torrent\\OpenWithProgids", "/v", "TorrentClient.Torrent", "/t", "REG_NONE", "/f",
-    ]).output().map_err(|e| e.to_string())?;
-    if !open_with.status.success() { return Err(String::from_utf8_lossy(&open_with.stderr).trim().to_string()); }
-    let _ = std::process::Command::new("cmd").args(["/C", "start", "", "ms-settings:defaultapps"]).spawn();
-    Ok(())
-}
 
 fn safe_folder_name(value: &str) -> String {
     let cleaned: String = value.chars().map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '_' } else { c }).collect();
@@ -1777,13 +1757,13 @@ impl eframe::App for TorrentClientApp {
                 self.settings.cats_by_peers = cat_mode == 1;
                 self.settings.cats_pack_race = cat_mode == 2;
                 ui.checkbox(&mut self.settings.yarn_when_seeding, t("Котик с клубком на раздаче", "A cat playing with yarn while seeding"));
-                if ui.button(t("Сделать клиентом по умолчанию для .torrent", "Make default app for .torrent files")).clicked() {
-                    self.notice = match register_torrent_association() {
-                        Ok(()) => t("Клиент зарегистрирован. Выберите «Торрент-зверёк» в параметрах Windows, если система спросит.", "The client is registered. Pick “Torrent Critter” in Windows settings if asked.").into(),
+                if ui.button(t("Сделать клиентом по умолчанию (.torrent и magnet)", "Make default app (.torrent and magnet)")).clicked() {
+                    self.notice = match desktop::register_default_app() {
+                        Ok(()) => t("Откроются параметры Windows: нажмите «Установить по умолчанию» у «Торрент-зверька» — он будет открывать .torrent и magnet-ссылки.", "Windows Settings will open: click “Set default” for Torrent Critter so it opens .torrent files and magnet links.").into(),
                         Err(error) => tf!("Не удалось зарегистрировать приложение: {error}", "Could not register the app: {error}"),
                     };
                 }
-                ui.label(egui::RichText::new(t("Windows может попросить подтвердить приложение в настройках стандартных приложений.", "Windows may ask you to confirm the app in Default apps settings.")).small());
+                ui.label(egui::RichText::new(t("Windows не даёт программам назначать себя самим — подтвердите выбор в открывшихся параметрах.", "Windows does not let apps make themselves the default; confirm it in the Settings page that opens.")).small());
                 ui.label(egui::RichText::new(t("Автозапуск настраивается только для этой учётной записи.", "Autostart is set up for this user account only.")).small());
                 ui.label(egui::RichText::new(t("Private .torrent не получают ни публичные, ни свои трекеры.", "Private torrents get neither public nor your own trackers.")).small());
                 ui.label(egui::RichText::new(t("UPnP может помочь принимать входящие соединения; настройка применяется после перезапуска.", "UPnP can help accept incoming connections; the change applies after a restart.")).small());

@@ -179,3 +179,78 @@ pub fn take_inbox() -> Vec<String> {
         text
     }).collect()
 }
+
+// ---- default app registration ---------------------------------------------
+
+/// Name under HKCU\Software\RegisteredApplications; Windows Settings uses it to
+/// open this app's own "Default apps" page.
+const REGISTERED_APP_NAME: &str = "TorrentCritter";
+
+fn reg_add(key: &str, name: Option<&str>, value: &str, kind: &str) -> Result<(), String> {
+    let mut command = std::process::Command::new("reg.exe");
+    command.args(["add", key]);
+    match name { Some(name) => { command.args(["/v", name]); } None => { command.arg("/ve"); } }
+    command.args(["/t", kind, "/d", value, "/f"]);
+    #[cfg(windows)]
+    { use std::os::windows::process::CommandExt; command.creation_flags(0x0800_0000 /* CREATE_NO_WINDOW */); }
+    let output = command.output().map_err(|e| e.to_string())?;
+    if output.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
+}
+
+fn reg_key_exists(key: &str) -> bool {
+    let mut command = std::process::Command::new("reg.exe");
+    command.args(["query", key]);
+    #[cfg(windows)]
+    { use std::os::windows::process::CommandExt; command.creation_flags(0x0800_0000); }
+    command.output().map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// Registers the client for .torrent files and magnet links the way Windows 10/11
+/// expect (ProgIDs + Capabilities + RegisteredApplications), then opens the
+/// app's page in Settings > Default apps. Windows does not let programs make
+/// themselves the default; the user confirms it there.
+pub fn register_default_app() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe.display().to_string();
+    let command = format!("\"{exe}\" \"%1\"");
+    let icon = format!("\"{exe}\",0");
+    let classes = "HKCU\\Software\\Classes";
+    let caps = "HKCU\\Software\\TorrentClient\\Capabilities";
+
+    // .torrent files
+    reg_add(&format!("{classes}\\TorrentClient.Torrent"), None, t("Торрент-файл", "Torrent file"), "REG_SZ")?;
+    reg_add(&format!("{classes}\\TorrentClient.Torrent\\DefaultIcon"), None, &icon, "REG_SZ")?;
+    reg_add(&format!("{classes}\\TorrentClient.Torrent\\shell\\open\\command"), None, &command, "REG_SZ")?;
+    reg_add(&format!("{classes}\\.torrent\\OpenWithProgids"), Some("TorrentClient.Torrent"), "", "REG_NONE")?;
+    if !reg_key_exists("HKCR\\.torrent") { reg_add(&format!("{classes}\\.torrent"), None, "TorrentClient.Torrent", "REG_SZ")?; }
+
+    // magnet: links
+    reg_add(&format!("{classes}\\TorrentClient.Magnet"), None, t("Magnet-ссылка", "Magnet link"), "REG_SZ")?;
+    reg_add(&format!("{classes}\\TorrentClient.Magnet"), Some("URL Protocol"), "", "REG_SZ")?;
+    reg_add(&format!("{classes}\\TorrentClient.Magnet\\DefaultIcon"), None, &icon, "REG_SZ")?;
+    reg_add(&format!("{classes}\\TorrentClient.Magnet\\shell\\open\\command"), None, &command, "REG_SZ")?;
+    // Windows only offers apps for schemes it knows; declare magnet: if nobody has yet.
+    if !reg_key_exists("HKCR\\magnet") {
+        reg_add(&format!("{classes}\\magnet"), None, "URL:Magnet link", "REG_SZ")?;
+        reg_add(&format!("{classes}\\magnet"), Some("URL Protocol"), "", "REG_SZ")?;
+        reg_add(&format!("{classes}\\magnet\\shell\\open\\command"), None, &command, "REG_SZ")?;
+    }
+
+    // What the app can open, for Settings > Default apps.
+    reg_add(caps, Some("ApplicationName"), app_name(), "REG_SZ")?;
+    reg_add(caps, Some("ApplicationDescription"), t("Торрент-клиент с котиками", "A BitTorrent client with cats"), "REG_SZ")?;
+    reg_add(caps, Some("ApplicationIcon"), &icon, "REG_SZ")?;
+    reg_add(&format!("{caps}\\FileAssociations"), Some(".torrent"), "TorrentClient.Torrent", "REG_SZ")?;
+    reg_add(&format!("{caps}\\UrlAssociations"), Some("magnet"), "TorrentClient.Magnet", "REG_SZ")?;
+    reg_add("HKCU\\Software\\RegisteredApplications", Some(REGISTERED_APP_NAME), "Software\\TorrentClient\\Capabilities", "REG_SZ")?;
+
+    unsafe {
+        use windows_sys::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
+        SHChangeNotify(SHCNE_ASSOCCHANGED as i32, SHCNF_IDLIST, std::ptr::null(), std::ptr::null());
+    }
+    // Windows 11 opens this app's own page (with a "Set default" button);
+    // older builds ignore the parameter and show the general list.
+    let page = format!("ms-settings:defaultapps?registeredAppUser={REGISTERED_APP_NAME}");
+    let _ = std::process::Command::new("explorer.exe").arg(page).spawn();
+    Ok(())
+}
