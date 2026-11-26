@@ -8,6 +8,7 @@
 
 ## Возможности
 
+- **Убирает за собой .torrent-файлы**: после добавления торрент-файл сразу удаляется, и папка «Загрузки» не зарастает сотней `.torrent`. Можно отключить в настройках.
 - **.torrent и magnet-ссылки** — кнопкой, перетаскиванием файла в окно или двойным кликом по `.torrent` (клиент можно сделать приложением по умолчанию).
 - **Котики на полосе прогресса**, три режима:
   - бегущие котики — бегают, прыгают и спотыкаются;
@@ -68,6 +69,7 @@ A small BitTorrent client for Windows with cartoon cats: they run along the prog
 
 **Features**
 
+- Cleans up after itself: the `.torrent` file is deleted right after it's added, so your Downloads folder doesn't fill up with torrent files (can be turned off in Settings).
 - `.torrent` files and magnet links: button, drag and drop, or double-click (can be made the default app for `.torrent`).
 - Three cat modes for the progress bar (running cats, a tussling ball of cats that grows with the peer count, one cat per connected peer), plus an optional cat playing with yarn while seeding.
 - Downloaded files are not locked: run a finished installer, move or delete files while the client keeps seeding.
