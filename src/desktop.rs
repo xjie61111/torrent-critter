@@ -250,7 +250,13 @@ pub fn register_default_app() -> Result<(), String> {
     }
     // Windows 11 opens this app's own page (with a "Set default" button);
     // older builds ignore the parameter and show the general list.
-    let page = format!("ms-settings:defaultapps?registeredAppUser={REGISTERED_APP_NAME}");
-    let _ = std::process::Command::new("explorer.exe").arg(page).spawn();
+    // ShellExecute, not explorer.exe: explorer does not parse an ms-settings:
+    // URI with a query and opens the Documents folder instead.
+    let page: Vec<u16> = format!("ms-settings:defaultapps?registeredAppUser={REGISTERED_APP_NAME}\0").encode_utf16().collect();
+    let verb: Vec<u16> = "open\0".encode_utf16().collect();
+    unsafe {
+        use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), page.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+    }
     Ok(())
 }
